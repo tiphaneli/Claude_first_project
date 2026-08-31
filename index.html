@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Nesne Tarayıcı">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<title>Nesne Tarayıcı</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#131a23; --panel2:#1a2430; --line:#26323f;
+    --text:#e8eef5; --muted:#93a4b8; --accent:#3fb6ff; --accent2:#48e08a;
+    --warn:#ffb03f; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-text-size-adjust:100%;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .wrap{max-width:900px;margin:0 auto;padding:14px 14px 40px}
+  h1{font-size:19px;margin:0 0 2px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+
+  .stage{position:relative;background:#000;border-radius:16px;overflow:hidden;border:1px solid var(--line);aspect-ratio:3/4}
+  @media(min-width:640px){.stage{aspect-ratio:16/10}}
+  #video,#overlay{position:absolute;inset:0;width:100%;height:100%}
+  #video{object-fit:cover;display:block}
+  #overlay{pointer-events:none;object-fit:cover}
+  .stage-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:var(--muted);font-size:14px}
+  .badge{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12px;color:var(--text)}
+  .badge b{color:var(--accent2)}
+
+  .btns{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:12px 0}
+  button{
+    font:600 15px/1 inherit; color:var(--text); background:var(--panel2);
+    border:1px solid var(--line); border-radius:12px; padding:14px 12px;
+    cursor:pointer; -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+  }
+  button:active{transform:scale(.98)}
+  button:disabled{opacity:.4}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#04121d}
+  button.wide{grid-column:1/-1}
+  button.ghost{background:transparent;color:var(--muted);font-weight:500;padding:11px}
+
+  .row{display:flex;align-items:center;gap:10px;justify-content:space-between;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin:9px 0}
+  .row label{font-size:14px}
+  .row small{display:block;color:var(--muted);font-size:12px;font-weight:400}
+  input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent)}
+  input[type=range]{width:120px;accent-color:var(--accent)}
+
+  h2{font-size:15px;margin:22px 0 8px;display:flex;align-items:baseline;gap:8px}
+  h2 span{color:var(--muted);font-weight:400;font-size:13px}
+
+  .tablebox{border:1px solid var(--line);border-radius:12px;overflow-x:auto;background:var(--panel);-webkit-overflow-scrolling:touch}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;white-space:nowrap}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel2)}
+  tr:last-child td{border-bottom:none}
+  .swatch{display:inline-block;width:11px;height:11px;border-radius:3px;border:1px solid rgba(255,255,255,.25);vertical-align:-1px;margin-left:5px}
+  .empty{padding:22px;text-align:center;color:var(--muted);font-size:13px}
+
+  details{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:16px}
+  summary{cursor:pointer;font-weight:600;font-size:14px}
+  details p,details li{color:var(--muted);font-size:13.5px}
+  details ol{padding-left:20px}
+
+  .note{font-size:12.5px;color:var(--muted);margin-top:10px}
+  .err{background:rgba(255,107,107,.1);border:1px solid rgba(255,107,107,.4);color:#ffc9c9;border-radius:12px;padding:12px 14px;margin:10px 0;font-size:13.5px;display:none}
+  .err.on{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Nesne Tarayıcı</h1>
+  <p class="sub">Kamerayı çevir, gördüklerini tabloya çevirir.</p>
+
+  <div id="err" class="err"></div>
+
+  <div class="stage">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="overlay"></canvas>
+    <div class="badge" id="badge">Hazır değil</div>
+    <div class="stage-msg" id="stageMsg">Başlamak için aşağıdaki mavi düğmeye bas.</div>
+  </div>
+
+  <div class="btns">
+    <button id="btnStart" class="primary wide">Kamerayı aç</button>
+    <button id="btnCapture" disabled>Kaydet</button>
+    <button id="btnStop" disabled>Durdur</button>
+  </div>
+
+  <div class="row">
+    <label>Otomatik kayıt
+      <small>Her <b id="autoSecLbl">3</b> saniyede bir kendiliğinden kaydeder</small>
+    </label>
+    <div style="display:flex;align-items:center;gap:10px">
+      <input type="range" id="autoSec" min="1" max="15" value="3">
+      <input type="checkbox" id="autoOn">
+    </div>
+  </div>
+
+  <div class="row">
+    <label>Hassasiyet
+      <small>Düşürürsen daha çok şey yakalar ama daha çok yanılır</small>
+    </label>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span id="thrLbl" style="color:var(--muted);font-size:13px">%50</span>
+      <input type="range" id="thr" min="10" max="90" value="50">
+    </div>
+  </div>
+
+  <h2>Veri tablosu <span id="count">0 satır</span></h2>
+  <div class="tablebox">
+    <table id="tbl">
+      <thead><tr>
+        <th>#</th><th>Zaman</th><th>Nesne</th><th>Tür</th><th>Güven</th>
+        <th>Detay tahmin</th><th>Konum X</th><th>Konum Y</th><th>Genişlik</th><th>Yükseklik</th>
+        <th>Alan %</th><th>En/Boy</th><th>Renk</th><th>Parlaklık</th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="empty" id="emptyMsg">Henüz kayıt yok. Kamerayı açıp “Kaydet”e bas.</div>
+  </div>
+
+  <div class="btns" style="margin-top:10px">
+    <button id="btnCsv" disabled>Excel'e aktar</button>
+    <button id="btnCopy" disabled>Panoya kopyala</button>
+    <button id="btnClear" class="ghost wide" disabled>Tabloyu temizle</button>
+  </div>
+  <p class="note">Tablo telefonunda saklanır; sayfayı kapatıp açsan da durur.</p>
+
+  <details>
+    <summary>Nasıl kullanılır?</summary>
+    <ol>
+      <li><b>Kamerayı aç</b>'a bas, telefon izin isteyince <b>İzin Ver</b> de.</li>
+      <li>Kamerayı bir şeye çevir. Tanıdıklarının etrafına kutu çizilir.</li>
+      <li><b>Kaydet</b>'e bas — o anda gördüğü her şey tabloya satır olarak eklenir.</li>
+      <li>Bitince <b>Excel'e aktar</b> ile dosyayı indir.</li>
+    </ol>
+  </details>
+
+  <details>
+    <summary>Neleri tanır, neleri tanımaz?</summary>
+    <p>Kutu çizip yerini bulduğu <b>80 çeşit</b> şey var: insan, kedi, köpek, kuş, at, inek, koyun, fil, ayı, zebra, zürafa; araba, bisiklet, otobüs; sandalye, masa, yatak, televizyon, telefon, kitap, şişe, bardak; muz, elma, pizza gibi.</p>
+    <p><b>Detay tahmin</b> sütunu ikinci bir yapay zekâdan gelir ve 1000 çeşit tanır — cinsi söyleyebilir (örneğin sadece “köpek” değil, “golden retriever”). Bu sütun İngilizcedir, çünkü modelin kendi etiketleri İngilizce.</p>
+    <p>Tanımadığı bir şeye çevirirsen tabloya bir şey yazılmaz. Bu normal — bilmediğine tahmin yürütmesindense susması daha doğru.</p>
+    <p>Ölçüler santimetre değil, <b>ekrana göre orandır</b>. Tek kameradan gerçek boyut çıkmaz.</p>
+  </details>
+
+  <details>
+    <summary>Çalışmıyorsa</summary>
+    <p><b>Kamera açılmıyor:</b> Sayfanın adresi <b>https://</b> ile başlamalı. iPhone'da Ayarlar → Safari → Kamera → Sor/İzin Ver olmalı.</p>
+    <p><b>“Yükleniyor” takıldı:</b> İlk açılışta yapay zekâ dosyaları indiriliyor (~10 MB), internet ister. Bir kez indikten sonra hızlanır.</p>
+    <p><b>Yavaş:</b> Otomatik kaydı kapat, hassasiyeti yükselt.</p>
+  </details>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script>
+"use strict";
+
+/* ---------- Türkçe isimler ve kategoriler ---------- */
+const TR = {
+  "person":"insan","bicycle":"bisiklet","car":"araba","motorcycle":"motosiklet","airplane":"uçak",
+  "bus":"otobüs","train":"tren","truck":"kamyon","boat":"tekne","traffic light":"trafik ışığı",
+  "fire hydrant":"yangın musluğu","stop sign":"dur tabelası","parking meter":"parkmetre","bench":"bank",
+  "bird":"kuş","cat":"kedi","dog":"köpek","horse":"at","sheep":"koyun","cow":"inek","elephant":"fil",
+  "bear":"ayı","zebra":"zebra","giraffe":"zürafa","backpack":"sırt çantası","umbrella":"şemsiye",
+  "handbag":"el çantası","tie":"kravat","suitcase":"valiz","frisbee":"frizbi","skis":"kayak",
+  "snowboard":"snowboard","sports ball":"top","kite":"uçurtma","baseball bat":"beyzbol sopası",
+  "baseball glove":"beyzbol eldiveni","skateboard":"kaykay","surfboard":"sörf tahtası",
+  "tennis racket":"tenis raketi","bottle":"şişe","wine glass":"kadeh","cup":"bardak","fork":"çatal",
+  "knife":"bıçak","spoon":"kaşık","bowl":"kase","banana":"muz","apple":"elma","sandwich":"sandviç",
+  "orange":"portakal","broccoli":"brokoli","carrot":"havuç","hot dog":"sosisli","pizza":"pizza",
+  "donut":"donut","cake":"pasta","chair":"sandalye","couch":"koltuk","potted plant":"saksı bitkisi",
+  "bed":"yatak","dining table":"masa","toilet":"klozet","tv":"televizyon","laptop":"dizüstü bilgisayar",
+  "mouse":"fare (bilgisayar)","remote":"kumanda","keyboard":"klavye","cell phone":"cep telefonu",
+  "microwave":"mikrodalga","oven":"fırın","toaster":"ekmek kızartma makinesi","sink":"lavabo",
+  "refrigerator":"buzdolabı","book":"kitap","clock":"saat","vase":"vazo","scissors":"makas",
+  "teddy bear":"oyuncak ayı","hair drier":"saç kurutma makinesi","toothbrush":"diş fırçası"
+};
+const HAYVAN = new Set(["bird","cat","dog","horse","sheep","cow","elephant","bear","zebra","giraffe"]);
+const YIYECEK = new Set(["banana","apple","sandwich","orange","broccoli","carrot","hot dog","pizza","donut","cake"]);
+function kategori(c){
+  if(c==="person") return "insan";
+  if(HAYVAN.has(c)) return "hayvan";
+  if(c==="potted plant") return "bitki";
+  if(YIYECEK.has(c)) return "yiyecek";
+  return "eşya";
+}
+function trAd(c){ return TR[c] || c; }
+
+/* ---------- Renk adlandırma ---------- */
+function renkAdi(r,g,b){
+  const mx=Math.max(r,g,b)/255, mn=Math.min(r,g,b)/255;
+  const l=(mx+mn)/2, d=mx-mn;
+  const s = d===0 ? 0 : d/(1-Math.abs(2*l-1));
+  if(l<0.14) return "siyah";
+  if(l>0.88 && s<0.18) return "beyaz";
+  if(s<0.13) return l>0.55 ? "açık gri" : "gri";
+  let h;
+  const R=r/255,G=g/255,B=b/255;
+  if(mx===R) h=60*(((G-B)/d)%6);
+  else if(mx===G) h=60*(((B-R)/d)+2);
+  else h=60*(((R-G)/d)+4);
+  if(h<0) h+=360;
+  if(h<15||h>=345) return "kırmızı";
+  if(h<45)  return l<0.42 ? "kahverengi" : "turuncu";
+  if(h<70)  return "sarı";
+  if(h<160) return "yeşil";
+  if(h<200) return "turkuaz";
+  if(h<255) return "mavi";
+  if(h<290) return "mor";
+  return "pembe";
+}
+const hex = (r,g,b)=>"#"+[r,g,b].map(v=>Math.round(v).toString(16).padStart(2,"0")).join("");
+
+/* ---------- Elemanlar ---------- */
+const video=document.getElementById("video"), overlay=document.getElementById("overlay");
+const ctx=overlay.getContext("2d");
+const badge=document.getElementById("badge"), stageMsg=document.getElementById("stageMsg");
+const errBox=document.getElementById("err");
+const btnStart=document.getElementById("btnStart"), btnCapture=document.getElementById("btnCapture");
+const btnStop=document.getElementById("btnStop"), btnCsv=document.getElementById("btnCsv");
+const btnCopy=document.getElementById("btnCopy"), btnClear=document.getElementById("btnClear");
+const autoOn=document.getElementById("autoOn"), autoSec=document.getElementById("autoSec"), autoSecLbl=document.getElementById("autoSecLbl");
+const thr=document.getElementById("thr"), thrLbl=document.getElementById("thrLbl");
+const tbody=document.getElementById("tbody"), emptyMsg=document.getElementById("emptyMsg"), countEl=document.getElementById("count");
+
+let stream=null, detector=null, fineModel=null, fineTried=false;
+let running=false, lastDetections=[], lastAuto=0, wakeLock=null;
+let rows = [];
+const STORE="nesne-tarayici-satirlar";
+
+function hata(msg){ errBox.textContent=msg; errBox.classList.add("on"); }
+function hataTemizle(){ errBox.classList.remove("on"); }
+
+/* ---------- Kayıtlı satırları geri yükle ---------- */
+try{ const s=localStorage.getItem(STORE); if(s) rows=JSON.parse(s)||[]; }catch(e){ rows=[]; }
+tabloCiz();
+
+/* ---------- Ayar dinleyicileri ---------- */
+autoSec.addEventListener("input",()=>autoSecLbl.textContent=autoSec.value);
+thr.addEventListener("input",()=>thrLbl.textContent="%"+thr.value);
+
+/* ---------- Kamera ---------- */
+btnStart.addEventListener("click", basla);
+btnStop.addEventListener("click", durdur);
+btnCapture.addEventListener("click", ()=>kaydet(false));
+btnCsv.addEventListener("click", csvIndir);
+btnCopy.addEventListener("click", panoyaKopyala);
+btnClear.addEventListener("click", ()=>{
+  if(!rows.length) return;
+  if(confirm("Tablodaki "+rows.length+" satırın hepsi silinecek. Emin misin?")){ rows=[]; sakla(); tabloCiz(); }
+});
+
+async function basla(){
+  hataTemizle();
+  if(!window.isSecureContext){
+    hata("Kamera açılamaz: bu sayfa güvenli bağlantıda (https://) değil. Adresin https ile başladığından emin ol.");
+    return;
+  }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    hata("Bu tarayıcı kamerayı desteklemiyor. iPhone'da Safari ile aç.");
+    return;
+  }
+  btnStart.disabled=true;
+  try{
+    badge.textContent="Kamera açılıyor…";
+    stageMsg.textContent="Kamera izni bekleniyor…";
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ideal:"environment"}, width:{ideal:1280}, height:{ideal:720} },
+      audio:false
+    });
+    video.srcObject=stream;
+    await video.play();
+    if(video.videoWidth && video.videoHeight){
+      document.querySelector(".stage").style.aspectRatio = video.videoWidth+" / "+video.videoHeight;
+    }
+  }catch(e){
+    btnStart.disabled=false;
+    badge.textContent="Hazır değil";
+    stageMsg.textContent="Kamera açılamadı.";
+    if(e && (e.name==="NotAllowedError"||e.name==="SecurityError"))
+      hata("Kamera izni verilmedi. iPhone'da: Ayarlar → Safari → Kamera → “Sor” yap, sayfayı yenile ve izin ver.");
+    else if(e && e.name==="NotFoundError")
+      hata("Kamera bulunamadı.");
+    else
+      hata("Kamera açılamadı: "+(e && e.message ? e.message : e));
+    return;
+  }
+
+  stageMsg.style.display="none";
+  try{ if(navigator.wakeLock) wakeLock = await navigator.wakeLock.request("screen"); }catch(e){}
+
+  if(!detector){
+    badge.textContent="Yapay zekâ yükleniyor…";
+    try{
+      detector = await cocoSsd.load({base:"lite_mobilenet_v2"});
+    }catch(e){
+      durdur();
+      hata("Yapay zekâ dosyaları indirilemedi. İnternetini kontrol edip tekrar dene.");
+      badge.textContent="Yüklenemedi";
+      return;
+    }
+  }
+
+  running=true;
+  btnStart.textContent="Kamera açık";
+  btnStop.disabled=false; btnCapture.disabled=false;
+  dongu();
+}
+
+function durdur(){
+  running=false;
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  video.srcObject=null;
+  if(wakeLock){ try{wakeLock.release();}catch(e){} wakeLock=null; }
+  ctx.clearRect(0,0,overlay.width,overlay.height);
+  btnStart.disabled=false; btnStart.textContent="Kamerayı aç";
+  btnStop.disabled=true; btnCapture.disabled=true;
+  autoOn.checked=false;
+  badge.textContent="Durduruldu";
+  stageMsg.style.display="flex";
+  stageMsg.textContent="Kamera kapalı. Tekrar açmak için mavi düğmeye bas.";
+}
+
+/* ---------- Tanıma döngüsü ---------- */
+let sonTanima=0;
+async function dongu(){
+  if(!running) return;
+  const now=performance.now();
+  if(video.readyState>=2 && now-sonTanima>180){
+    sonTanima=now;
+    try{
+      const preds = await detector.detect(video, 20, thr.value/100);
+      lastDetections = preds.filter(p=>p.score >= thr.value/100);
+      ciz(lastDetections);
+      badge.innerHTML = lastDetections.length
+        ? "<b>"+lastDetections.length+"</b> nesne görülüyor"
+        : "Tanıdık bir şey yok";
+      if(autoOn.checked && now-lastAuto > autoSec.value*1000 && lastDetections.length){
+        lastAuto=now; kaydet(true);
+      }
+    }catch(e){ /* kare atlandı, sorun değil */ }
+  }
+  requestAnimationFrame(dongu);
+}
+
+function ciz(preds){
+  const w=video.videoWidth, h=video.videoHeight;
+  if(!w||!h) return;
+  if(overlay.width!==w||overlay.height!==h){ overlay.width=w; overlay.height=h; }
+  ctx.clearRect(0,0,w,h);
+  const fs=Math.max(13, Math.round(w/48));
+  ctx.lineWidth=Math.max(2, Math.round(w/280));
+  ctx.font="600 "+fs+"px -apple-system,system-ui,sans-serif";
+  ctx.textBaseline="top";
+  for(const p of preds){
+    const [x,y,bw,bh]=p.bbox;
+    const k=kategori(p.class);
+    const col = k==="insan" ? "#3fb6ff" : (k==="hayvan" ? "#48e08a" : (k==="eşya" ? "#ffb03f" : "#c48cff"));
+    ctx.strokeStyle=col; ctx.strokeRect(x,y,bw,bh);
+    const etiket=trAd(p.class)+"  %"+Math.round(p.score*100);
+    const tw=ctx.measureText(etiket).width+12;
+    const tx=Math.max(0, Math.min(x, w-tw));
+    const ty=Math.max(0, y-fs-8);
+    ctx.fillStyle=col; ctx.fillRect(tx, ty, tw, fs+8);
+    ctx.fillStyle="#04121d"; ctx.fillText(etiket, tx+6, ty+4);
+  }
+}
+
+/* ---------- Kayıt ---------- */
+const crop=document.createElement("canvas"), cctx=crop.getContext("2d",{willReadFrequently:true});
+
+function bolgeRengi(x,y,w,h){
+  const S=24;
+  crop.width=S; crop.height=S;
+  try{ cctx.drawImage(video, x,y,w,h, 0,0,S,S); }catch(e){ return null; }
+  let d;
+  try{ d=cctx.getImageData(0,0,S,S).data; }catch(e){ return null; }
+  let r=0,g=0,b=0,n=0;
+  for(let i=0;i<d.length;i+=4){ r+=d[i]; g+=d[i+1]; b+=d[i+2]; n++; }
+  r/=n; g/=n; b/=n;
+  const parlaklik = Math.round((0.2126*r + 0.7152*g + 0.0722*b)/255*100);
+  return { r,g,b, hex:hex(r,g,b), ad:renkAdi(r,g,b), parlaklik };
+}
+
+async function detayModel(){
+  if(fineModel || fineTried) return fineModel;
+  fineTried=true;
+  try{
+    await new Promise((res,rej)=>{
+      const s=document.createElement("script");
+      s.src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js";
+      s.onload=res; s.onerror=rej; document.head.appendChild(s);
+    });
+    // Not: paketin varsayilan adresi tfhub.dev; orasi 2024'te kapandigi icin
+    // modeli Google'in hala yayinda olan tfjs-models deposundan aliyoruz.
+    fineModel = await mobilenet.load({
+      version:2, alpha:1.0,
+      modelUrl:"https://storage.googleapis.com/tfjs-models/savedmodel/mobilenet_v2_1.0_224/model.json",
+      inputRange:[0,1]
+    });
+  }catch(e){ fineModel=null; }
+  return fineModel;
+}
+
+const detayCanvas=document.createElement("canvas"); detayCanvas.width=224; detayCanvas.height=224;
+const dctx=detayCanvas.getContext("2d");
+
+async function kaydet(otomatik){
+  const preds=lastDetections.slice();
+  if(!preds.length){
+    if(!otomatik) badge.textContent="Kaydedilecek nesne yok";
+    return;
+  }
+  const W=video.videoWidth, H=video.videoHeight;
+  const t=new Date();
+  const zaman=t.toLocaleString("tr-TR");
+  const yon = W>=H ? "yatay" : "dikey";
+  const model = await detayModel();
+  const yeni=[];
+
+  for(const p of preds){
+    let [x,y,bw,bh]=p.bbox;
+    x=Math.max(0,x); y=Math.max(0,y);
+    bw=Math.min(bw, W-x); bh=Math.min(bh, H-y);
+    if(bw<4||bh<4) continue;
+
+    const renk=bolgeRengi(x,y,bw,bh);
+    // Detay tahmini yalnizca yeterince buyuk kirpintilarda anlamli.
+    // Kucuk bir lekeyi 224x224'e buyutunce model rastgele bir sey uyduruyor.
+    let detay="", detayG="";
+    if(model && Math.min(bw,bh) >= 48){
+      try{
+        // biraz cevre birak: baglam siniflandirmayi belirgin iyilestiriyor
+        const pd=0.10;
+        const px0=Math.max(0, x-bw*pd), py0=Math.max(0, y-bh*pd);
+        const pw=Math.min(W-px0, bw*(1+2*pd)), ph=Math.min(H-py0, bh*(1+2*pd));
+        dctx.drawImage(video, px0,py0,pw,ph, 0,0,224,224);
+        const res=await model.classify(detayCanvas, 1);
+        if(res && res[0] && res[0].probability >= 0.20){
+          detay=res[0].className.split(",")[0].trim();
+          detayG=Math.round(res[0].probability*100);
+        }
+      }catch(e){}
+    }
+
+    yeni.push({
+      zaman,
+      nesne: trAd(p.class),
+      nesne_en: p.class,
+      kategori: kategori(p.class),
+      guven: Math.round(p.score*100),
+      detay, detayG,
+      x_oran: +((x+bw/2)/W).toFixed(3),
+      y_oran: +((y+bh/2)/H).toFixed(3),
+      g_oran: +(bw/W).toFixed(3),
+      y2_oran: +(bh/H).toFixed(3),
+      x_px: Math.round(x), y_px: Math.round(y),
+      g_px: Math.round(bw), y_px2: Math.round(bh),
+      alan: +((bw*bh)/(W*H)*100).toFixed(2),
+      enboy: +(bw/bh).toFixed(2),
+      renk_ad: renk?renk.ad:"", renk_hex: renk?renk.hex:"",
+      parlaklik: renk?renk.parlaklik:"",
+      karedeki_nesne: preds.length,
+      kare_en: W, kare_boy: H, yon
+    });
+  }
+
+  if(!yeni.length) return;
+  rows = rows.concat(yeni);
+  if(rows.length>5000) rows = rows.slice(-5000);
+  sakla(); tabloCiz();
+  badge.innerHTML="<b>+"+yeni.length+"</b> satır eklendi";
+  if(navigator.vibrate) navigator.vibrate(otomatik?15:35);
+}
+
+function sakla(){ try{ localStorage.setItem(STORE, JSON.stringify(rows)); }catch(e){} }
+
+function tabloCiz(){
+  const son = rows.slice(-200).reverse();
+  tbody.innerHTML = son.map(r=>{
+    const i = rows.indexOf(r)+1;
+    return "<tr>"+
+      "<td>"+i+"</td>"+
+      "<td>"+esc(r.zaman)+"</td>"+
+      "<td>"+esc(r.nesne)+"</td>"+
+      "<td>"+esc(r.kategori)+"</td>"+
+      "<td>%"+r.guven+"</td>"+
+      "<td>"+(r.detay?esc(r.detay)+" %"+r.detayG:"—")+"</td>"+
+      "<td>"+r.x_oran+"</td><td>"+r.y_oran+"</td>"+
+      "<td>"+r.g_oran+"</td><td>"+r.y2_oran+"</td>"+
+      "<td>"+r.alan+"</td><td>"+r.enboy+"</td>"+
+      "<td>"+esc(r.renk_ad)+"<span class='swatch' style='background:"+esc(r.renk_hex)+"'></span></td>"+
+      "<td>"+r.parlaklik+"</td>"+
+    "</tr>";
+  }).join("");
+  const var_ = rows.length>0;
+  emptyMsg.style.display = var_ ? "none" : "block";
+  countEl.textContent = rows.length + " satır" + (rows.length>200 ? " (son 200 gösteriliyor)" : "");
+  btnCsv.disabled=!var_; btnCopy.disabled=!var_; btnClear.disabled=!var_;
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+/* ---------- Dışa aktarma ---------- */
+const BASLIK = ["Sira","Zaman","Nesne","Nesne (EN)","Tur","Guven %","Detay tahmin","Detay guven %",
+  "Merkez X (oran)","Merkez Y (oran)","Genislik (oran)","Yukseklik (oran)",
+  "X (piksel)","Y (piksel)","Genislik (piksel)","Yukseklik (piksel)",
+  "Alan %","En/Boy orani","Renk","Renk kodu","Parlaklik 0-100",
+  "Karedeki nesne sayisi","Kare genislik","Kare yukseklik","Yon"];
+
+function satirDizi(r,i){
+  return [i+1,r.zaman,r.nesne,r.nesne_en,r.kategori,r.guven,r.detay,r.detayG,
+    r.x_oran,r.y_oran,r.g_oran,r.y2_oran,r.x_px,r.y_px,r.g_px,r.y_px2,
+    r.alan,r.enboy,r.renk_ad,r.renk_hex,r.parlaklik,
+    r.karedeki_nesne,r.kare_en,r.kare_boy,r.yon];
+}
+function csvMetin(){
+  const q=v=>{ const s=String(v==null?"":v); return /[";\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+  return [BASLIK.join(";")].concat(rows.map((r,i)=>satirDizi(r,i).map(q).join(";"))).join("\r\n");
+}
+function csvIndir(){
+  const blob=new Blob(["﻿"+csvMetin()],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const d=new Date(), p=n=>String(n).padStart(2,"0");
+  a.href=url;
+  a.download="nesne-verisi-"+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"-"+p(d.getHours())+p(d.getMinutes())+".csv";
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1500);
+}
+async function panoyaKopyala(){
+  const metin=[BASLIK.join("\t")].concat(rows.map((r,i)=>satirDizi(r,i).join("\t"))).join("\n");
+  try{
+    await navigator.clipboard.writeText(metin);
+    btnCopy.textContent="Kopyalandı ✓";
+  }catch(e){
+    btnCopy.textContent="Kopyalanamadı";
+  }
+  setTimeout(()=>btnCopy.textContent="Panoya kopyala",1800);
+}
+
+/* ---------- Sekme arka plana geçince kamerayı boşuna çalıştırma ---------- */
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden && running) autoOn.checked=false;
+});
+</script>
+</body>
+</html>
